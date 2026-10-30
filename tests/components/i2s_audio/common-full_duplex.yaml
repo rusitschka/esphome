@@ -1,0 +1,27 @@
+packages:
+  bus: !include ../../test_build_components/common/i2s_audio/esp32-s3-idf.yaml
+
+i2s_audio:
+  - id: !extend i2s_audio_bus
+    full_duplex: true
+    keep_alive: true
+
+microphone:
+  - platform: i2s_audio
+    id: duplex_mic
+    i2s_audio_id: i2s_audio_bus
+    i2s_din_pin: ${i2s_din_pin}
+    adc_type: external
+    sample_rate: 48000
+    bits_per_sample: 32bit
+    channel: stereo
+
+speaker:
+  - platform: i2s_audio
+    id: duplex_speaker
+    i2s_audio_id: i2s_audio_bus
+    i2s_dout_pin: ${i2s_dout_pin}
+    dac_type: external
+    sample_rate: 48000
+    bits_per_sample: 32bit
+    channel: stereo

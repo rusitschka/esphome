@@ -1,0 +1,64 @@
+# Overlay for the stock ESP32-S3-BOX-3 voice package (ESPHome 2026.10.1).
+# Load the local i2s_audio component separately through external_components.
+i2s_audio:
+  - id: !extend i2s_audio_bus
+    full_duplex: true
+    keep_alive: true
+
+audio_adc:
+  - id: !extend es7210_adc
+    mic_gain: 33dB
+    sample_rate: 48000
+
+microphone:
+  - id: !extend box_mic
+    sample_rate: 48000
+  - platform: resampler
+    id: box_mic_16k
+    microphone: box_mic
+    sample_rate: 16000
+
+micro_wake_word:
+  microphone: box_mic_16k
+
+voice_assistant:
+  microphone: box_mic_16k
+
+# The stock package assumes one microphone; select the hardware mic explicitly
+# for capture state and mute while preserving its original UI automations.
+media_player:
+  - id: !extend speaker_media_player
+    on_announcement:
+      then:
+        - if:
+            condition:
+              - microphone.is_capturing: box_mic
+            then:
+              - script.execute: stop_wake_word
+              - if:
+                  condition:
+                    - lambda: return id(wake_word_engine_location).current_option() == "In Home Assistant";
+                  then:
+                    - wait_until:
+                        - not:
+                            voice_assistant.is_running:
+        - if:
+            condition:
+              not:
+                voice_assistant.is_running:
+            then:
+              - lambda: id(voice_assistant_phase) = ${voice_assist_muted_phase_id};
+              - script.execute: draw_display
+
+switch:
+  - id: !extend mute
+    on_turn_off:
+      then:
+        - microphone.unmute: box_mic
+        - lambda: id(voice_assistant_phase) = ${voice_assist_idle_phase_id};
+        - script.execute: draw_display
+    on_turn_on:
+      then:
+        - microphone.mute: box_mic
+        - lambda: id(voice_assistant_phase) = ${voice_assist_muted_phase_id};
+        - script.execute: draw_display
