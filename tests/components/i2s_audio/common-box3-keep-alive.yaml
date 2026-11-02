@@ -7,7 +7,6 @@ i2s_audio:
 
 audio_adc:
   - id: !extend es7210_adc
-    mic_gain: 33dB
     sample_rate: 48000
 
 microphone:

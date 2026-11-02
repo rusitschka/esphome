@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 from esphome import config_validation as cv
 from esphome.components.i2s_audio import _validate_full_duplex
@@ -205,3 +206,89 @@ def test_keep_alive_without_duplex_is_invalid(tmp_path: Path) -> None:
         "'keep_alive' requires 'full_duplex: true'" in str(error)
         for error in result.errors
     )
+
+
+@pytest.mark.parametrize("reverse_order", [False, True])
+@pytest.mark.parametrize(
+    ("sample_rate", "channels", "slot_bits", "valid"),
+    [
+        (16000, 1, 16, False),
+        (44100, 1, 16, False),
+        (48000, 2, 16, False),
+        (48000, 1, 32, False),
+        (48000, 1, 16, True),
+    ],
+)
+def test_duplex_pipeline_format(
+    tmp_path: Path,
+    reverse_order: bool,
+    sample_rate: int,
+    channels: int,
+    slot_bits: int,
+    valid: bool,
+) -> None:
+    """Reject incompatible preferred formats regardless of YAML component order."""
+    from esphome.config import load_config
+
+    source = Path("tests/component_tests/i2s_audio/test_full_duplex_formats.yaml")
+    config = yaml.safe_load(source.read_text(encoding="utf-8"))
+    pipeline = config["media_player"][0]["announcement_pipeline"]
+    pipeline.update(sample_rate=sample_rate, num_channels=channels)
+    config["microphone"][0]["bits_per_sample"] = f"{slot_bits}bit"
+    config["speaker"][0]["bits_per_sample"] = f"{slot_bits}bit"
+    if reverse_order:
+        config = dict(reversed(list(config.items())))
+    path = tmp_path / "pipeline.yaml"
+    path.write_text(yaml.safe_dump(config, sort_keys=False))
+    CORE.config_path = path
+    result = load_config({})
+    assert (not result.errors) == valid, result.errors
+    if not valid:
+        assert any(
+            "Invalid configuration for the speaker media_player" in str(e)
+            for e in result.errors
+        ), result.errors
+
+
+@pytest.mark.parametrize("full_duplex", [False, True])
+def test_resampler_can_feed_fixed_duplex_bus(tmp_path: Path, full_duplex: bool) -> None:
+    """A 16 kHz source is valid when a resampler converts it to the bus's 48 kHz."""
+    from esphome.config import load_config
+
+    source = Path("tests/component_tests/i2s_audio/test_full_duplex_formats.yaml")
+    config = yaml.safe_load(source.read_text(encoding="utf-8"))
+    config["i2s_audio"]["full_duplex"] = full_duplex
+    config["i2s_audio"]["keep_alive"] = full_duplex
+    config["speaker"].append(
+        {
+            "platform": "resampler",
+            "id": "converted",
+            "output_speaker": "output",
+            "sample_rate": 48000,
+        }
+    )
+    config["media_player"][0]["announcement_pipeline"].update(
+        speaker="converted", sample_rate=16000
+    )
+    path = tmp_path / "resampled.yaml"
+    path.write_text(yaml.safe_dump(config, sort_keys=False))
+    CORE.config_path = path
+    result = load_config({})
+    assert not result.errors, result.errors
+
+
+def test_non_duplex_keeps_variable_format(tmp_path: Path) -> None:
+    """The new limits do not restrict ordinary dynamically configured I2S speakers."""
+    from esphome.config import load_config
+
+    source = Path("tests/component_tests/i2s_audio/test_full_duplex_formats.yaml")
+    config = yaml.safe_load(source.read_text(encoding="utf-8"))
+    config["i2s_audio"].update(full_duplex=False, keep_alive=False)
+    config["media_player"][0]["announcement_pipeline"].update(
+        sample_rate=16000, num_channels=2
+    )
+    path = tmp_path / "non_duplex.yaml"
+    path.write_text(yaml.safe_dump(config, sort_keys=False))
+    CORE.config_path = path
+    result = load_config({})
+    assert not result.errors, result.errors

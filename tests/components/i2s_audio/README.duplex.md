@@ -21,7 +21,9 @@ Validation requires one standard I2S microphone, at least one standard speaker a
 sample rate, bit width, clock role, APLL/MCLK settings and mono/stereo slot layout.
 PDM, SPDIF and non-Philips framing are rejected. Speakers sharing a bus must also share
 DOUT, channel selection and framing. Playback must match the fixed output format;
-the existing bit-depth narrowing remains available.
+the existing bit-depth narrowing remains available. Consumer validation resolves fixed bus
+limits before checking the preferred format. The decoder fails unsupported streams instead
+of waiting indefinitely; resampler and mixer speakers account for their format conversions.
 
 ## Box overlay
 
@@ -30,13 +32,32 @@ Load `common-box3-keep-alive.yaml` after the stock Box package, and load this ch
 The tested base package revision is `a159d9aae35a4d0123aa0bc1d2ceaa5357c6cbad` in
 `esphome/wake-word-voice-assistants`. Recheck the overlay automations when updating it.
 
-The ADC and microphone run at 48 kHz with **33 dB** gain. A built-in microphone resampler
+The ADC and microphone run at 48 kHz. The overlay leaves gain to the device configuration;
+the tested configuration sets **33 dB** there. A built-in microphone resampler
 provides **16 kHz** to Assist and microWakeWord. DAC, speaker and announcement playback
 remain **48 kHz / 16-bit mono**. Capture-state and mute automations name the hardware
 microphone explicitly, avoiding ambiguous IDs after adding the resampler. Mapping-form
 automations replace the original action lists rather than appending duplicates.
 
-## Validation
+## Follow-up (2026-11-02)
+
+Unsupported decoded formats now return `FAILED` to the media pipeline. The format query
+accounts for resampler and mixer conversions; ordinary I2S speakers retain their existing
+behavior. Configuration validation also checks fixed duplex limits before consumer formats,
+independently of YAML order. Gain is set only by the consuming device configuration.
+
+Validation: all 2,213 Python component tests passed, including 36 I2S tests. Pinned project
+hooks passed. Host checks using the production method bodies and mocked driver/RTOS calls
+confirmed immediate format failure, valid playback, narrowing, resampling, mixing and a
+nested conversion chain, with AddressSanitizer and UndefinedBehaviorSanitizer enabled.
+The normal local-patch Box build through `esphome.sh` passed: 4,871,823 bytes of flash and
+155,727 bytes of static RAM. This follow-up has not been uploaded.
+
+Two review findings remain open: router speakers do not forward the format query, and
+24-bit duplex output on the original ESP32 passes the query but is rejected by the driver.
+Neither case is used by the tested ESP32-S3 Box configuration.
+
+## Initial validation
 
 - 23 configuration/code-generation tests passed, including default-off behavior and invalid bus settings.
 - Ruff, clang-format and language-schema extraction passed; both flags appear with default false.
